@@ -12,24 +12,29 @@ const char PRIVATE_KEY[] PROGMEM = "-----BEGIN PRIVATE KEY-----\n\n-----END PRIV
 const char spreadsheetId[] = "";
 
 unsigned long lastTime = 0;
-unsigned long timerDelay = 5000; // 5 seconds (or more)
+unsigned long timerDelay = 5000; // 5 seconds
 unsigned long lastPrintTime = 0;
 unsigned long printInterval = 5000;
 
 void tokenStatusCallback(TokenInfo info);
 const char *ntpServer = "pool.ntp.org";
 
-unsigned long getTime()
+// Function to get formatted time as "YYYYMMDD-HH:MM:SS" in GMT+7
+String getFormattedTime()
 {
-    time_t now;
-    time(&now);
-    return now;
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo))
+    {
+        return "N/A"; // Return "N/A" if time sync fails
+    }
+    char buffer[20];
+    strftime(buffer, sizeof(buffer), "%Y%m%d-%H:%M:%S", &timeinfo);
+    return String(buffer);
 }
 
 void setup()
 {
     Serial.begin(115200);
-    Serial.println();
     Serial.println();
 
     WiFi.mode(WIFI_STA);
@@ -46,7 +51,7 @@ void setup()
     Serial.println(WiFi.localIP());
     Serial.println();
 
-    configTime(0, 0, ntpServer);
+    configTime(25200, 0, ntpServer); // GMT+7
     delay(5000);
 
     GSheet.setTokenCallback(tokenStatusCallback);
@@ -60,9 +65,9 @@ void loop()
     if (millis() - lastPrintTime > printInterval)
     {
         lastPrintTime = millis();
-        unsigned long epochTime = getTime();
+        String formattedTime = getFormattedTime();
         int randomValue = random(1, 101);
-        Serial.printf("Time: %lu, Random Number: %d\n", epochTime, randomValue);
+        Serial.printf("Time: %s, Random Number: %d\n", formattedTime.c_str(), randomValue);
     }
 
     if (ready && millis() - lastTime > timerDelay)
@@ -73,11 +78,14 @@ void loop()
         Serial.println("\nAppending data to Google Sheets...");
 
         FirebaseJson valueRange;
-        unsigned long epochTime = getTime();
-        valueRange.add("majorDimension", "COLUMNS");
-        valueRange.set("values/[0]/[0]", epochTime);
+        String formattedTime = getFormattedTime();
+        int randomValue = random(1, 101);
 
-        bool success = GSheet.values.append(&response, spreadsheetId, "Sheet1!A:A", &valueRange);
+        valueRange.add("majorDimension", "ROWS");
+        valueRange.set("values/[0]/[0]", formattedTime); // Column A
+        valueRange.set("values/[0]/[1]", randomValue);   // Column B
+
+        bool success = GSheet.values.append(&response, spreadsheetId, "Sheet1!A:B", &valueRange);
         if (success)
         {
             response.toString(Serial, true);
